@@ -1,0 +1,368 @@
+---
+title: "Project"
+author: "Waqar Ul Mulk"
+date: "2024-04-13"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r}
+# Importing required libraries in R
+library(tidyverse)  # For data manipulation and visualization
+library(ggplot2)    # For Visualization
+library(reshape2)   # For Graphs
+library(stats)      # For statistical functions
+library(lmtest)     # For linear regression
+library(car)        # For diagnostics
+library(corrplot)   # For Multicolinearity
+library(MASS)       # For Functions
+library(caret)      # For data splitting
+library(glmnet)     # For logistic regression
+library(pROC)       # For creating AOCROC curve
+library(boot)       # For Confidence Interval
+
+```
+
+
+```{r}
+# Load dataset
+diabetes <- read.csv("full.csv")
+```
+
+
+```{r}
+# Display the first few rows of the dataset
+head(diabetes)
+```
+
+
+```{r}
+summary(diabetes)
+```
+
+
+```{r}
+hist(diabetes$Outcome)
+```
+
+```{r}
+# Set up a layout for multiple plots
+par(mfrow = c(2, 4))  # 2 rows, 2 columns
+
+# Plot histograms for each variable
+hist(diabetes$Pregnancies, main = "Pregnancies")
+hist(diabetes$Glucose, main = "Glucose")
+hist(diabetes$BloodPressure, main = "Blood Pressure")
+hist(diabetes$SkinThickness, main = "Skin Thickness")
+hist(diabetes$Insulin, main = "Insulin")
+hist(diabetes$BMI, main = "BMI")
+hist(diabetes$DiabetesPedigreeFunction, main = "DiabetesPedigreeFunction")
+hist(diabetes$Age, main = "Age")
+
+```
+
+```{r}
+# Specify the variables to plot
+variables <- c("Pregnancies", "Glucose", "BloodPressure", "SkinThickness",
+               "Insulin", "BMI", "DiabetesPedigreeFunction", "Age")
+
+# Set up a layout for multiple plots
+par(mfrow = c(2, 4))  # 2 rows, 4 columns
+
+# Plot QQ plots for each variable
+for (var in variables) {
+  qqnorm(diabetes[[var]], main = var)
+  qqline(diabetes[[var]])
+}
+
+```
+
+```{r}
+library(ggplot2)
+library(reshape2)
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(diabetes)
+
+# Melt the correlation matrix for visualization
+melted_corr <- melt(correlation_matrix)
+
+# Plot the correlation matrix using ggplot2
+ggplot(data = melted_corr, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "lightblue", high = "darkblue", 
+                       midpoint = 0, name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, size = 10, hjust = 1)) +
+  labs(title = "Correlation Matrix Heatmap")
+
+```
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+***GLM Model***
+
+```{r}
+# Check for missing values
+any(is.na(diabetes))
+
+# Split the data into training, validation, and testing sets (70-15-15 split)
+set.seed(786) # For reproducibility
+index <- createDataPartition(diabetes$Outcome, p = 0.7, list = FALSE)
+glmtrain_data <- diabetes[index, ]
+temp <- diabetes[-index, ]
+index <- createDataPartition(temp$Outcome, p = 0.5, list = FALSE)
+glmvalid_data <- temp[index, ]
+glmtest_data <- temp[-index, ]
+
+# Check the dimensions of the split datasets
+dim(glmtrain_data)
+dim(glmvalid_data)
+dim(glmtest_data)
+
+# Fit logistic regression model on training data
+GLM_model <- glm(Outcome ~ ., data = glmtrain_data, family = binomial)
+
+# Make predictions on validation data
+pred_glmvalid <- predict(GLM_model, newdata = glmvalid_data, type = "response")
+
+# Convert probabilities to binary predictions
+pred_glmvalid_binary <- ifelse(pred_glmvalid > 0.5, 1, 0)
+
+# Evaluate performance on validation set
+confusion_matrix_glmvalid <- table(pred_glmvalid_binary, glmvalid_data$Outcome)
+confusion_matrix_glmvalid
+GLM_accuracy_valid <- sum(diag(confusion_matrix_glmvalid)) / sum(confusion_matrix_glmvalid)
+print(paste("GLM_accuracy_valid:", GLM_accuracy_valid))
+
+# Calculate precision, recall, and F1 score on validation set
+TP_valid <- confusion_matrix_glmvalid[2, 2]
+FP_valid <- confusion_matrix_glmvalid[1, 2]
+FN_valid <- confusion_matrix_glmvalid[2, 1]
+
+glmprecision_valid <- TP_valid / (TP_valid + FP_valid)
+glmrecall_valid <- TP_valid / (TP_valid + FN_valid)
+glmF1_valid <- 2 * glmprecision_valid * glmrecall_valid / (glmprecision_valid + glmrecall_valid)
+
+# Display results
+print(paste("GLM_Precision_valid:", glmprecision_valid))
+print(paste("GLM_Recall_valid:", glmrecall_valid))
+print(paste("GLM_F1_Score_valid:", glmF1_valid))
+
+
+# Make predictions on test data
+pred_glmtest <- predict(GLM_model, newdata = glmtest_data, type = "response")
+
+# Convert probabilities to binary predictions
+pred_glmtest_binary <- ifelse(pred_glmtest > 0.5, 1, 0)
+
+# Evaluate performance on test set
+confusion_matrix_glmtest <- table(pred_glmtest_binary, glmtest_data$Outcome)
+confusion_matrix_glmtest
+GLM_accuracy_test <- sum(diag(confusion_matrix_glmtest)) / sum(confusion_matrix_glmtest)
+print(paste("GLM_accuracy_test:", GLM_accuracy_test))
+
+
+
+# Calculate precision, recall, and F1 score on test set
+TP_test <- confusion_matrix_glmtest[2, 2]
+FP_test <- confusion_matrix_glmtest[1, 2]
+FN_test <- confusion_matrix_glmtest[2, 1]
+
+glmprecision_test <- TP_test / (TP_test + FP_test)
+glmrecall_test <- TP_test / (TP_test + FN_test)
+glmF1_test <- 2 * glmprecision_test * glmrecall_test / (glmprecision_test + glmrecall_test)
+
+print(paste("GLM_Precision_test:", glmprecision_test))
+print(paste("GLM_Recall_test:", glmrecall_test))
+print(paste("GLM_F1_Score_test:", glmF1_test))
+
+```
+
+
+```{r}
+summary(GLM_model)
+```
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+***Bootstrap Model***
+
+
+```{r}
+# Function to perform bootstrapping and model fitting
+bootstrap_and_fit <- function(train_data) {
+  # Bootstrap sample
+  boot_data <- train_data[sample(nrow(train_data), replace = TRUE), ]
+  
+  # Fit logistic regression model on bootstrap sample
+  bsmodel <- glm(Outcome ~ ., data = boot_data, family = binomial)
+  
+  return(bsmodel)
+}
+
+# Set seed for reproducibility
+set.seed(786)
+
+# Split the data into training and testing sets
+index_train <- sample(nrow(diabetes), 0.7 * nrow(diabetes))  # 70% train
+bstrain_data <- diabetes[index_train, ]
+bstest_data <- diabetes[-index_train, ]
+
+# Perform bootstrapping and model fitting
+bsmodels <- replicate(10, bootstrap_and_fit(bstrain_data), simplify = FALSE)
+
+BETAS <- NULL
+for (i in 1:10) {
+  BETAS <- cbind(BETAS, as.matrix(bsmodels[[i]]$coeff))
+}
+
+BETAS_MEAN <- apply(BETAS, MARGIN = 1, FUN = mean)
+BETAS_SD <- apply(BETAS, MARGIN = 1, FUN = sd)
+
+UPPER <- BETAS_MEAN + qnorm(0.975) * BETAS_SD
+LOWER <- BETAS_MEAN - qnorm(0.975) * BETAS_SD
+
+# Predict on the test data
+X_test <- cbind(1, bstest_data[, c(1:8)])
+output_test <- 1 / (1 + exp(-as.matrix(X_test) %*% as.matrix(BETAS_MEAN)))
+predicted_outcome_test <- ifelse(output_test >= 0.7, 1, 0)
+BS_conf_matrix_test <- table(predicted_outcome_test, bstest_data$Outcome)
+BS_accuracy_test <- sum(diag(BS_conf_matrix_test)) / sum(BS_conf_matrix_test)
+BS_precision_test <- as.numeric(BS_conf_matrix_test[2, 2]) / sum(BS_conf_matrix_test[, 2])
+BS_recall_test <- as.numeric(BS_conf_matrix_test[2, 2]) / sum(BS_conf_matrix_test[2, ])
+BS_F1_score_test <- 2 * BS_precision_test * BS_recall_test / (BS_precision_test + BS_recall_test)
+
+BETAS_MEAN
+# Print results for test data
+print("Test Confusion Matrix:")
+print(BS_conf_matrix_test)
+print(paste("Test Accuracy:", BS_accuracy_test))
+print(paste("Test Precision:", BS_precision_test))
+print(paste("Test Recall:", BS_recall_test))
+print(paste("Test F1 Score:", BS_F1_score_test))
+
+```
+
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+
+***MLE Using Newton-Raphson Algorithm Model***
+
+```{r}
+# Newton-Raphson Method
+newton_raphson_method <- function(diabetes, threshold = 1e-10, max_iter = 70) {
+  X <- model.matrix(Outcome ~ ., data = diabetes) # Exclude intercept column
+  y <- diabetes$Outcome
+  
+  # Likelihood Function
+  prob <- function(X, beta_new) {
+    beta_new <- as.vector(beta_new)
+    return(exp(X %*% beta_new) / (1 + exp(X %*% beta_new)))
+  }
+  
+  beta_new <- rep(0, ncol(X))
+  diff <- 10000
+  iter_count <- 0
+  
+  while(diff > threshold) {
+    p <- as.vector(prob(X, beta_new))
+    W <- diag(p * (1 - p))
+    
+    
+    beta_change <- solve(t(X) %*% W %*% X) %*% t(X) %*% (y - p)
+    
+    # Update beta
+    beta_new <- beta_new + beta_change
+    diff <- sum(beta_change^2)
+    iter_count <- iter_count + 1
+    
+    if(iter_count > max_iter) {
+      stop("Not converging.")
+    }
+  }
+  
+  coef <- c("(Intercept)" = beta_new[1], Pregnancies = beta_new[2], Glucose = beta_new[3],
+            BloodPressure = beta_new[4], SkinThickness = beta_new[5], Insulin = beta_new[6], 
+            BMI = beta_new[7], DiabetesPedigreeFunction = beta_new[8], Age = beta_new[9])
+  # c=c(coef,beta_new)
+  return(coef)
+}
+
+# Calling the function with my dataset
+newton_raphson_method(diabetes)
+
+```
+
+
+***MLE Model***
+
+
+```{r}
+# Set seed for reproducibility
+set.seed(786)
+
+# Apply Newton-Raphson method on training data
+train_coefficients <- newton_raphson_method(train_data)
+train_coefficients <- as.matrix(train_coefficients)
+
+# Get the coefficients from the training result
+train_coef <- train_coefficients[[2]]
+
+# Extract predictors from test data
+X_test <- model.matrix(Outcome ~ ., data = test_data)
+
+# Calculate predicted probabilities for test data using coefficients from training
+predicted_probabilities <- exp(X_test %*% train_coefficients) / (1 + exp(X_test %*% train_coefficients))
+
+# Convert probabilities to binary predictions (0 or 1) based on threshold (e.g., 0.5)
+predicted_outcome <- ifelse(predicted_probabilities >= 0.5, 1, 0)
+
+# Extract actual outcomes from test data
+y_test <- test_data$Outcome
+
+# Calculate accuracy on test data
+NR_accuracy <- sum(predicted_outcome == y_test) / length(y_test)
+
+# Compute AUC-ROC curve on test set
+roc_NR <- roc(y_test, predicted_probabilities)
+auc_NR <- auc(roc_NR)
+
+# Calculate accuracy on test data
+NR_accuracy <- sum(predicted_outcome == y_test) / length(y_test)
+
+
+# Compute confusion matrix on test set
+confusion_matrix_NR <- table(predicted_outcome, y_test)
+
+# Compute precision, recall, and F1 score on test set
+precision_NR <- confusion_matrix_NR[2, 2] / sum(confusion_matrix_NR[, 2])
+recall_NR <- confusion_matrix_NR[2, 2] / sum(confusion_matrix_NR[2, ])
+f1_score_NR <- 2 * (precision_NR * recall_NR) / (precision_NR + recall_NR)
+
+# Plot AUC-ROC curve for test set
+plot(roc_NR, main = "AUC-ROC Curve for Newton-Raphson Method on Test Set")
+
+# Print or visualize performance metrics on test set
+print(paste("AUC-ROC:", auc_NR))
+print(confusion_matrix_NR)
+print(paste("Precision:", precision_NR))
+print(paste("Recall:", recall_NR))
+print(paste("F1 Score:", f1_score_NR))
+print(paste("MLE Model Accuracy:", NR_accuracy))
+
+```
+
+
+
+
+
+
